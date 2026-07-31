@@ -4,69 +4,37 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-// =========================
-// Wi-Fi Configuration
-// =========================
+//==================== WIFI ====================
+const char* ssid = "J/20073-2.4G";
+const char* password = "qwerty12";
 
-const char* ssid = "YOUR_WIFI_NAME";
-const char* password = "YOUR_WIFI_PASSWORD";
-
-// =========================
-// Pin Configuration
-// =========================
-
+//==================== PIN DEFINITIONS ====================
 #define TRIG_PIN 5
 #define ECHO_PIN 18
 #define BUZZER_PIN 27
 
-#define OLED_SDA 21
-#define OLED_SCL 22
-
-// =========================
-// OLED Configuration
-// =========================
-
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 
-Adafruit_SSD1306 display(
-  SCREEN_WIDTH,
-  SCREEN_HEIGHT,
-  &Wire,
-  -1
-);
+//==================== OLED ====================
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// =========================
-// Web Server
-// =========================
-
+//==================== WEB SERVER ====================
 WebServer server(80);
 
-// =========================
-// Bin Configuration
-// =========================
+//==================== BIN SETTINGS ====================
+// Distance from sensor to opposite wall when bin is empty
+const float BIN_HEIGHT = 31.0;
 
-// Change this according to your actual bin.
-const float BIN_HEIGHT_CM = 30.0;
+//==================== VARIABLES ====================
+float distance = BIN_HEIGHT;
+float lastDistance = BIN_HEIGHT;
 
-// Alert when waste reaches 80%
-const int FULL_THRESHOLD = 80;
+int wastePercent = 0;
+String statusText = "EMPTY";
 
-// =========================
-// Variables
-// =========================
-
-float distanceCM = 0;
-int wasteLevel = 0;
-
-String binStatus = "EMPTY";
-
-// =========================
-// Read Distance
-// =========================
-
-float readDistance() {
-
+float readDistance()
+{
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
 
@@ -77,232 +45,122 @@ float readDistance() {
 
   long duration = pulseIn(ECHO_PIN, HIGH, 30000);
 
-  if (duration == 0) {
+  if (duration == 0)
     return -1;
-  }
 
-  float distance = duration * 0.0343 / 2.0;
+  float d = duration * 0.0343 / 2.0;
 
-  return distance;
+  // Ignore invalid values
+  if (d < 2 || d > 40)
+    return -1;
+
+  return d;
 }
 
-// =========================
-// Calculate Waste Level
-// =========================
-
-int calculateWasteLevel(float distance) {
-
-  if (distance < 0) {
-    return 0;
-  }
-
-  float level =
-    ((BIN_HEIGHT_CM - distance) / BIN_HEIGHT_CM) * 100.0;
-
-  int percentage = (int)level;
-
-  percentage = constrain(percentage, 0, 100);
-
-  return percentage;
-}
-
-// =========================
-// Determine Bin Status
-// =========================
-
-String getBinStatus(int level) {
-
-  if (level >= FULL_THRESHOLD) {
-    return "FULL";
-  }
-
-  if (level >= 50) {
-    return "HALF FULL";
-  }
-
-  if (level >= 20) {
-    return "FILLING";
-  }
-
-  return "EMPTY";
-}
-
-// =========================
-// Update OLED
-// =========================
-
-void updateOLED() {
-
+void updateOLED()
+{
   display.clearDisplay();
 
   display.setTextColor(SSD1306_WHITE);
 
   display.setTextSize(1);
-  display.setCursor(0, 0);
-
+  display.setCursor(0,0);
   display.println("SMART WASTE BIN");
 
-  display.drawLine(
-    0, 11,
-    127, 11,
-    SSD1306_WHITE
-  );
+  display.drawLine(0,10,127,10,SSD1306_WHITE);
 
   display.setTextSize(2);
-  display.setCursor(0, 18);
-
-  display.print(wasteLevel);
-  display.println("%");
+  display.setCursor(0,18);
+  display.print(wastePercent);
+  display.print("%");
 
   display.setTextSize(1);
-  display.setCursor(0, 43);
+  display.setCursor(0,45);
+  display.print("Dist: ");
+  display.print(distance,1);
+  display.println(" cm");
 
   display.print("Status: ");
-  display.println(binStatus);
+  display.println(statusText);
 
   display.display();
 }
-
-// =========================
-// Buzzer Alert
-// =========================
-
-void updateBuzzer() {
-
-  if (wasteLevel >= FULL_THRESHOLD) {
-
-    digitalWrite(BUZZER_PIN, HIGH);
-
-  } else {
-
-    digitalWrite(BUZZER_PIN, LOW);
-  }
-}
-
-// =========================
-// Web Page
-// =========================
-
-String createWebPage() {
-
+//==================== WEB PAGE ====================
+String webpage()
+{
   String page = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
-
-<meta name="viewport"
-content="width=device-width, initial-scale=1">
-
-<meta http-equiv="refresh" content="3">
-
-<title>Smart Waste Management</title>
+<meta http-equiv="refresh" content="2">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
-
-body {
-  font-family: Arial, sans-serif;
-  text-align: center;
-  background: #f2f2f2;
-  margin: 0;
-  padding: 20px;
+body{
+font-family:Arial;
+background:#f2f2f2;
+text-align:center;
 }
 
-.container {
-  max-width: 500px;
-  margin: auto;
+.card{
+background:white;
+width:330px;
+margin:auto;
+margin-top:30px;
+padding:20px;
+border-radius:15px;
+box-shadow:0px 0px 10px gray;
 }
 
-h1 {
-  font-size: 28px;
+.bar{
+width:100%;
+height:25px;
+background:#ddd;
+border-radius:20px;
+overflow:hidden;
 }
 
-.card {
-  background: white;
-  padding: 25px;
-  margin-top: 20px;
-  border-radius: 15px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+.fill{
+height:25px;
+background:#28a745;
 }
-
-.level {
-  font-size: 55px;
-  font-weight: bold;
-  margin: 10px;
-}
-
-.status {
-  font-size: 24px;
-  margin: 15px;
-}
-
-.bar {
-  width: 100%;
-  height: 30px;
-  background: #ddd;
-  border-radius: 15px;
-  overflow: hidden;
-}
-
-.fill {
-  height: 100%;
-  width: )rawliteral";
-
-  page += String(wasteLevel);
-
-  page += R"rawliteral(%;
-  background: #333;
-}
-
-.info {
-  margin-top: 20px;
-  font-size: 17px;
-}
-
 </style>
 
 </head>
 
 <body>
 
-<div class="container">
-
-<h1>Smart Waste Management</h1>
-
 <div class="card">
 
-<div class="level">)rawliteral";
+<h2>Smart Waste Bin</h2>
 
-  page += String(wasteLevel);
+<h1>)rawliteral";
 
-  page += R"rawliteral(%</div>
+  page += String(wastePercent);
+
+  page += R"rawliteral(%</h1>
 
 <div class="bar">
-<div class="fill"></div>
+<div class="fill" style="width:)rawliteral";
+
+  page += String(wastePercent);
+
+  page += R"rawliteral(%;"></div>
 </div>
 
-<div class="status">
-Status: )rawliteral";
+<br>
 
-  page += binStatus;
+<h3>Status : )rawliteral";
 
-  page += R"rawliteral(
-</div>
+  page += statusText;
 
-<div class="info">
-Distance: )rawliteral";
+  page += R"rawliteral(</h3>
 
-  page += String(distanceCM, 1);
+<p>Distance : )rawliteral";
 
-  page += R"rawliteral( cm
-</div>
+  page += String(distance,1);
 
-<div class="info">
-Alert Threshold: 80%
-</div>
-
-</div>
-
-<p>ESP32 IoT Smart Bin</p>
+  page += R"rawliteral( cm</p>
 
 </div>
 
@@ -313,145 +171,119 @@ Alert Threshold: 80%
   return page;
 }
 
-// =========================
-// Web Server Handler
-// =========================
-
-void handleRoot() {
-
-  server.send(
-    200,
-    "text/html",
-    createWebPage()
-  );
+void handleRoot()
+{
+  server.send(200, "text/html", webpage());
 }
-
-// =========================
-// Setup
-// =========================
-
-void setup() {
-
+void setup()
+{
   Serial.begin(115200);
 
-  // Pin setup
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
 
   digitalWrite(BUZZER_PIN, LOW);
 
-  // OLED setup
-  Wire.begin(
-    OLED_SDA,
-    OLED_SCL
-  );
+  // Initialize I2C
+  Wire.begin(21, 22);
 
-  if (!display.begin(
-        SSD1306_SWITCHCAPVCC,
-        0x3C
-      )) {
-
+  // Initialize OLED
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C))
+  {
     Serial.println("OLED initialization failed!");
-
-    while (true) {
-      delay(1000);
-    }
+    while (true);
   }
 
+  // Startup Screen
   display.clearDisplay();
-
   display.setTextColor(SSD1306_WHITE);
-
-  display.setTextSize(1);
-
-  display.setCursor(0, 0);
-
-  display.println("SMART WASTE");
-
-  display.println("MANAGEMENT");
-
-  display.println();
-
-  display.println("Starting...");
-
+  display.setTextSize(2);
+  display.setCursor(10, 20);
+  display.println("SMART");
+  display.setCursor(20, 45);
+  display.println("BIN");
   display.display();
 
   delay(2000);
 
-  // Wi-Fi
-  WiFi.begin(
-    ssid,
-    password
-  );
+  // Connect Wi-Fi
+  Serial.print("Connecting to WiFi");
 
-  Serial.print("Connecting to Wi-Fi");
+  WiFi.begin(ssid, password);
 
-  while (WiFi.status() != WL_CONNECTED) {
-
+  while (WiFi.status() != WL_CONNECTED)
+  {
     delay(500);
-
     Serial.print(".");
   }
 
   Serial.println();
-
-  Serial.println("Wi-Fi connected!");
+  Serial.println("WiFi Connected");
 
   Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
 
-  Serial.println(
-    WiFi.localIP()
-  );
-
-  // Web server
-  server.on(
-    "/",
-    handleRoot
-  );
-
+  server.on("/", handleRoot);
   server.begin();
 
-  Serial.println(
-    "Web server started!"
-  );
+  Serial.println("Web Server Started");
 }
-
-// =========================
-// Main Loop
-// =========================
-
-void loop() {
-
+void loop()
+{
   server.handleClient();
 
-  distanceCM = readDistance();
+  // Read sensor
+  float newDistance = readDistance();
 
-  wasteLevel =
-    calculateWasteLevel(
-      distanceCM
-    );
+  // Keep last valid reading
+  if (newDistance != -1)
+  {
+    lastDistance = (lastDistance * 0.8) + (newDistance * 0.2);
+  }
 
-  binStatus =
-    getBinStatus(
-      wasteLevel
-    );
+  distance = lastDistance;
 
+  // Calculate waste percentage
+  wastePercent = (int)(((BIN_HEIGHT - distance) * 100.0) / BIN_HEIGHT);
+  wastePercent = constrain(wastePercent, 0, 100);
+
+  // Determine status
+  if (wastePercent >= 80)
+  {
+    statusText = "FULL";
+    digitalWrite(BUZZER_PIN, HIGH);
+  }
+  else if (wastePercent >= 50)
+  {
+    statusText = "HALF FULL";
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+  else if (wastePercent >= 20)
+  {
+    statusText = "FILLING";
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+  else
+  {
+    statusText = "EMPTY";
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+
+  // Update OLED
   updateOLED();
 
-  updateBuzzer();
-
+  // Debug output
   Serial.print("Distance: ");
+  Serial.print(distance, 1);
+  Serial.print(" cm");
 
-  Serial.print(distanceCM);
+  Serial.print(" | Waste: ");
+  Serial.print(wastePercent);
+  Serial.print("%");
 
-  Serial.print(" cm | Waste: ");
+  Serial.print(" | Status: ");
+  Serial.println(statusText);
 
-  Serial.print(wasteLevel);
-
-  Serial.print("% | Status: ");
-
-  Serial.println(binStatus);
-
-  delay(1000);
+  delay(500);
 }
